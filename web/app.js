@@ -172,6 +172,58 @@ const GRUPOS_FICHA = [
   ["Economía y gestión pública", ["TD120210001", "TD120210002", "TD080010008", "TD070130012", "TD070130001", "TD310010001"]],
 ];
 
+
+/* ---------------------------------------------------------------- cuadro de mando de inicio */
+const KPIS = [
+  ["TD010010009", "Población total (proyección DANE)"],
+  ["TD070010003", "Ingresos tributarios"],
+  ["TD040010013", "Cobertura en educación superior"],
+  ["TD050010001", "Afiliados al régimen contributivo de salud"],
+  ["TD060010008", "Violencia interpersonal (tasa por 100.000 hab.)"],
+  ["TD040010006", "Cobertura bruta en educación"],
+];
+let _dashT = null;
+async function renderDash(tc) {
+  const box = $("#fDash"); if (!box) return;
+  clearInterval(_dashT);
+  const t = S.terr[tc];
+  if (!t || !["MUN", "DEP"].includes(t.nv)) { box.hidden = true; return; }
+  const items = [];
+  for (const [ic, lab] of KPIS) {
+    const s = (await serie(ic, tc)).filter((r) => r[1] !== null && r[1] !== undefined && !(S.per[r[0]] && S.per[r[0]].fut));
+    if (s.length < 2) continue;
+    const u = s[s.length - 1], p = s[s.length - 2];
+    const pp = (S.ind[ic] || {}).ut === "porcentaje";
+    const dif = pp ? u[1] - p[1] : p[1] ? (u[1] / p[1] - 1) * 100 : null;
+    if (dif === null) continue;
+    const cls = Math.abs(dif) < 0.05 ? "fl" : dif > 0 ? "up" : "dn";
+    const flecha = cls === "fl" ? "■" : dif > 0 ? "▲" : "▼";
+    items.push(`<div class="kpi"><div class="kpi-in"><small>${esc(lab)}</small><b class="num">${esc(fmt(u[1], ic, true))}</b>` +
+      `<div class="kpi-d ${cls}">${flecha} ${dif > 0 ? "+" : dif < 0 ? "−" : ""}${nf(1)(Math.abs(dif))}${pp ? " p.p." : " %"} <em>vs ${esc(perTxt(p[0]))}</em></div>` +
+      `<span class="kpi-f">${esc(perTxt(u[0]))} · crecimiento anual</span></div></div>`);
+  }
+  if (!items.length) { box.hidden = true; return; }
+  box.innerHTML = `<h2>${esc(t.n)} en cifras</h2><div class="kpi-view"><div class="kpi-track">${items.join("")}</div></div>`;
+  box.hidden = false;
+  const track = box.querySelector(".kpi-track");
+  const vis = () => +getComputedStyle(box).getPropertyValue("--vis") || 4;
+  if (items.length <= vis() || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  let pausa = false;
+  box.addEventListener("mouseenter", () => (pausa = true));
+  box.addEventListener("mouseleave", () => (pausa = false));
+  box.addEventListener("focusin", () => (pausa = true));
+  box.addEventListener("focusout", () => (pausa = false));
+  _dashT = setInterval(() => {
+    if (pausa || document.hidden || !box.offsetParent) return;
+    track.style.transition = "transform .7s ease";
+    track.style.transform = "translateX(calc(-100% / " + vis() + "))";
+    track.addEventListener("transitionend", () => {
+      track.style.transition = "none"; track.style.transform = "none";
+      track.appendChild(track.firstElementChild);
+    }, { once: true });
+  }, 5000);
+}
+
 async function renderFicha() {
   const tc = S.t, t = S.terr[tc];
   const anc = ancestros(tc);
@@ -194,6 +246,7 @@ async function renderFicha() {
     heroHtml.push(`<div><b class="num">${esc(fmt(u[1], ic, true))}</b><small>${esc(lab)} · ${esc(perTxt(u[0]))}</small></div>`);
   }
   $("#fHero").innerHTML = heroHtml.join("");
+  renderDash(tc).catch((e) => console.warn("Cuadro de mando:", e));
 
   // grupos de indicadores con referencia
   const refs = referencias(tc);
