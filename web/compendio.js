@@ -226,6 +226,7 @@ async function cargar() {
 /* ------------------------------------------------------------------ render por tema */
 let secActual = null;
 window.olvidarTema = () => { secActual = null; };
+window.reajustarGraficos = () => charts.forEach((ch) => { if (ch.resize && ch.update) { ch.resize(); ch.update("none"); } });
 
 async function renderTema(secId) {
   const S = TC().S;
@@ -243,7 +244,9 @@ async function renderTema(secId) {
   if (obs) obs.disconnect();
   const body = $("#cmpBody");
   body.innerHTML = `<p class="loading">Preparando los gráficos…</p>`;
+  const clave = sec.id + "|" + tc;
   await cargar();
+  if (secActual !== clave) return;
   if (!window.Chart) { body.innerHTML = `<p class="note">No se pudo cargar la librería de gráficos.</p>`; return; }
   configurarChart();
   const t = S.terr[tc];
@@ -372,6 +375,10 @@ async function pintar(card, tc) {
     const fn = { serie, indice, multiserie, apiladas, piramide, dona, comparadas, ranking, comunas, comunas100: comunas, territorios, cultivos, mapa }[c.tipo];
     const info = await fn(c, box, tc, card);
     $(".cmp-fte", card).textContent = info ? `Fuente: ${info.fuente}${info.periodo ? " · " + info.periodo : ""}` : "";
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const cv = $("canvas", box), ch = cv && window.Chart && window.Chart.getChart(cv);
+      if (ch) { ch.resize(); ch.update("none"); }
+    }));
     if (!info) { box.innerHTML = `<p class="cmp-vacio">Sin datos publicados para ${TC().esc(nombreT(tc))}.</p>`; $(".cmp-acc", card).hidden = true; }
   } catch (err) {
     console.error(c.t, err);
@@ -544,10 +551,11 @@ async function piramide(c, box, tc, card) {
     },
   });
   const pintarAnio = () => {
-    out.textContent = TC().perTxt(per) + (fut(per) ? " · proyección" : "");
+    const mayores = d0.mA.slice(13).concat(d0.hA.slice(13)).reduce((x, y) => x + y, 0);
+    out.textContent = TC().perTxt(per) + (fut(per) ? " · proyección" : "") + " · " + nf(0, d0.tot) + " personas · " + nf(1, (mayores / d0.tot) * 100) + " % con 65 años o más";
     card._tabla = { cols: ["Grupo de edad", "Mujeres", "Hombres"], filas: c.grupos.map((g, i) => [g, nf(0, d0.mA[i]), nf(0, d0.hA[i])]) };
   };
-  rg.addEventListener("input", () => { per = pers[+rg.value]; d0 = datos(per); ch.data.datasets[0].data = d0.m; ch.data.datasets[1].data = d0.h; ch.update("none"); pintarAnio(); });
+  rg.addEventListener("input", () => { per = pers[+rg.value]; d0 = datos(per); ch.data.datasets[0].data = d0.m; ch.data.datasets[1].data = d0.h; ch.update(); pintarAnio(); });
   charts.push(ch);
   pintarAnio();
   return { fuente: fuenteDe(c.h[0]), periodo: `${TC().perTxt(pers[0])}–${TC().perTxt(pers[pers.length - 1])}` };

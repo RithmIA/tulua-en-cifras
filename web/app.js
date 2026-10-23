@@ -136,7 +136,10 @@ function mostrar(v, push = true) {
   $$("nav.tabs button").forEach((b) => b.setAttribute("aria-selected", b.dataset.view === v));
   $$(".view").forEach((s) => (s.hidden = s.id !== "v-" + seccion));
   if (push) escribirHash();
-  if (tema) return window.renderTema && window.renderTema(tema);
+  if (tema) {
+    [60, 400].forEach((ms) => setTimeout(() => window.reajustarGraficos && window.reajustarGraficos(), ms));
+    return window.renderTema && window.renderTema(tema);
+  }
   ({ inicio: renderFicha, mapa: renderMapa, explorar: renderExplorar, comparar: renderComparar, metodo: renderMetodo }[v] || renderFicha)();
 }
 function irTerritorio(tc, vista) {
