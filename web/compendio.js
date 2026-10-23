@@ -316,7 +316,8 @@ function configurarChart() {
   C.defaults.color = tok("--muted");
   C.defaults.borderColor = tok("--line");
   C.defaults.maintainAspectRatio = false;
-  C.defaults.animation = matchMedia("(prefers-reduced-motion: reduce)").matches ? false : { duration: 350 };
+  // No reemplazar el objeto: Chart.js perdería los tipos de interpolación y fallaría (this._fn is not a function)
+  C.defaults.animation.duration = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 350;
   C.defaults.plugins.legend.labels.boxWidth = 12;
   C.defaults.plugins.legend.labels.boxHeight = 12;
   C.defaults.plugins.legend.labels.color = tok("--ink-2");
