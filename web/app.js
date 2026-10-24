@@ -227,6 +227,47 @@ async function renderDash(tc) {
   }, 5000);
 }
 
+/* ---------------------------------------------------------------- informe socioeconómico (PDF) */
+async function informeSocioeconomico(btn) {
+  const tc = S.t, t = S.terr[tc], txt = btn.textContent;
+  btn.disabled = true; btn.textContent = "Preparando informe…";
+  try {
+    const refs = referencias(tc), fuentes = new Set();
+    const dato = async (ic) => {
+      const s = (await serie(ic, tc)), u = ultimo(s);
+      return u ? { u, p: [...s.slice(0, s.indexOf(u))].reverse().find((r) => r[1] !== null && r[1] !== undefined) || null } : null;
+    };
+    const variacion = (ic, d) => {
+      if (!d.p || !d.p[1] && S.ind[ic].ut !== "porcentaje") return "-";
+      const pp = S.ind[ic].ut === "porcentaje", v = pp ? d.u[1] - d.p[1] : (d.u[1] / d.p[1] - 1) * 100;
+      return (v > 0 ? "+" : "") + nf(1)(v) + (pp ? " p.p." : " %");
+    };
+    const fte = (ic) => { const f = S.cat.fuentes[(S.ind[ic] || {}).f]; if (f && f.n) fuentes.add(f.n); };
+    const cifras = [];
+    for (const [ic, lab] of KPIS) {
+      const d = await dato(ic); if (!d) continue; fte(ic);
+      cifras.push({ v: fmt(d.u[1], ic, true), l: lab, d: d.p ? variacion(ic, d) + " vs " + perTxt(d.p[0]) : perTxt(d.u[0]) });
+    }
+    const bl = [{ t: "p", texto: "Resumen de los indicadores sociales, económicos y territoriales más importantes de " + t.n + ". Cada fila muestra el último dato disponible, su variación frente al periodo anterior y la comparación con " + (refs.length ? refs.map(corto).join(" y ") : "otros territorios") + "." }];
+    if (cifras.length) bl.push({ t: "h", texto: "Indicadores destacados" }, { t: "cifras", items: cifras });
+    for (const [grupo, ics] of GRUPOS_FICHA) {
+      const filas = [];
+      for (const ic of ics) {
+        const d = await dato(ic); if (!d || !S.ind[ic]) continue; fte(ic);
+        const cmp = [];
+        for (const r of refs) { const s = await serie(ic, r), u = ultimo(s); cmp.push(u ? fmt(u[1], ic) : "-"); }
+        filas.push([nombreInd(ic), fmt(d.u[1], ic), perTxt(d.u[0]), variacion(ic, d)].concat(cmp));
+      }
+      if (filas.length) bl.push({ t: "h", texto: grupo }, { t: "tabla", cols: ["Indicador", t.n, "Periodo", "Var. periodo ant."].concat(refs.map(corto)), filas });
+    }
+    bl.push({ t: "nota", texto: "Fuentes: " + [...fuentes].join("; ") + ". Informe generado el " + window.EXP.hoyTxt() + "." });
+    await window.EXP.pdf({ titulo: "Informe socioeconómico de " + t.n, sub: "Resumen de los indicadores más importantes · " + window.EXP.hoyTxt(), bloques: bl, nombre: "tulua_informe_socioeconomico_" + window.EXP.slug(t.n) });
+  } catch (err) {
+    console.error(err); window.EXP && window.EXP.aviso("No se pudo generar el informe PDF.");
+  } finally { btn.disabled = false; btn.textContent = txt; }
+}
+document.addEventListener("click", (e) => { const b = e.target.closest("#btnInforme"); if (b) informeSocioeconomico(b); });
+
 async function renderFicha() {
   const tc = S.t, t = S.terr[tc];
   const anc = ancestros(tc);

@@ -304,6 +304,17 @@ nav.tabs.util button{font-size:14px}
 @media(max-width:1000px){.dash{--vis:3}}@media(max-width:720px){.dash{--vis:2}.kpi-in b{font-size:24px}}@media(max-width:480px){.dash{--vis:1}}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .kpi-d.dn{color:#ff8a80}}
 :root[data-theme="dark"] .kpi-d.dn{color:#ff8a80}
+
+/* --- Descargas --- */
+.exp{position:relative;display:inline-block}
+.exp-btn{display:inline-flex;align-items:center;gap:4px;padding-inline:8px}
+.exp-menu{position:absolute;right:0;bottom:calc(100% + 6px);z-index:30;min-width:176px;background:var(--surface);border:1px solid var(--line-2);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.2);padding:4px;display:flex;flex-direction:column}
+.exp-menu[hidden]{display:none}
+.exp-menu button{all:unset;cursor:pointer;padding:8px 12px;border-radius:6px;font-size:13px;color:var(--ink)}
+.exp-menu button:hover,.exp-menu button:focus-visible{background:var(--accent-2)}
+.btn-pdf{margin-top:14px}
+.btn-pdf[disabled]{opacity:.6;cursor:progress}
+.exp-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--ground);padding:10px 16px;border-radius:8px;font-size:13px;z-index:100}
 </style>
 </head>
 <body>
@@ -335,6 +346,7 @@ nav.tabs.util button{font-size:14px}
         <div class="crumbs" id="fCrumbs"></div>
         <h1 id="fName"></h1>
         <p class="sub" id="fSub"></p>
+        <button type="button" class="btn pri btn-pdf" id="btnInforme">Descargar informe socioeconómico (PDF)</button>
       </div>
       <div class="hero-nums" id="fHero"></div>
     </div>
@@ -426,7 +438,7 @@ nav.tabs.util button{font-size:14px}
     ];
     function cargar(src, listo) { var s = document.createElement("script"); s.src = src; s.onload = s.onerror = listo; document.body.appendChild(s); }
     function siguiente(i) {
-      if (i >= libs.length) return cargar("compendio.js", function () { cargar("app.js", function () {}); });
+      if (i >= libs.length) return cargar("exportar.js", function () { cargar("compendio.js", function () { cargar("app.js", function () {}); }); });
       var lib = libs[i];
       if (window[lib[0]]) return siguiente(i + 1);
       cargar(lib[1], function () { if (window[lib[0]]) siguiente(i + 1); else cargar(lib[2], function () { siguiente(i + 1); }); });

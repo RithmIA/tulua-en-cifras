@@ -254,7 +254,8 @@ async function renderTema(secId) {
   body.innerHTML = `
     <header class="tema-head">
       <div><div class="eyebrow">${TC().esc(t.n)} · tema ${i + 1} de ${secs.length}</div>
-        <h1>${TC().esc(sec.t)}</h1><p class="note">${TC().esc(sec.intro)}</p></div>
+        <h1>${TC().esc(sec.t)}</h1><p class="note">${TC().esc(sec.intro)}</p>
+        <button type="button" class="btn pri btn-pdf" data-pdf>Descargar informe PDF</button></div>
       <div class="cmp-cifras">${(sec.cifras || []).map((ic) => cifra(ic, tc)).join("")}</div>
     </header>
     <div class="cmp-grid" id="temaGrid">
@@ -277,6 +278,7 @@ async function renderTema(secId) {
       ${secs.map((x, k) => `<button class="btn${x.id === sec.id ? " pri" : ""}" data-tema="${x.id}">${k + 1}. ${TC().esc(x.t)}</button>`).join("")}
     </nav>`;
   $$("[data-tema]", body).forEach((b) => b.addEventListener("click", () => TC().mostrar("tema:" + b.dataset.tema)));
+  $("[data-pdf]", body).addEventListener("click", (e) => informeTema(sec, tc, e.currentTarget));
   window.scrollTo({ top: 0, behavior: "auto" });
 
   const tarjetaMapa = $(".cmp-card.mapa", body);
@@ -287,6 +289,31 @@ async function renderTema(secId) {
     pintar(en.target, tc);
   }), { rootMargin: "300px 0px" });
   $$(".cmp-card[data-card]", body).forEach((el) => obs.observe(el));
+}
+
+async function informeTema(sec, tc, btn) {
+  const txt = btn.textContent;
+  btn.disabled = true; btn.textContent = "Preparando informe…";
+  try {
+    const body = $("#cmpBody");
+    if (obs) obs.disconnect();
+    for (const el of $$(".cmp-card[data-card]", body)) if ($(".cmp-ph", el)) await pintar(el, tc);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const nom = TC().S.terr[tc].n;
+    const cif = $$(".cmp-cifra", body).map((el) => ({ v: $("b", el).textContent, l: $("span", el).textContent }));
+    const bl = [{ t: "p", texto: sec.intro }];
+    if (cif.length) bl.push({ t: "h", texto: "Cifras clave" }, { t: "cifras", items: cif });
+    bl.push({ t: "h", texto: "Gráficos del tema" });
+    for (const el of $$(".cmp-card[data-card]", body)) {
+      const c = sec.cards[+el.dataset.card], fte = $(".cmp-fte", el).textContent;
+      if ($("canvas", el)) bl.push({ t: "img", titulo: c.t, sub: c.sub, fuente: fte, canvas: window.EXP.lienzo(el, {}, false) });
+      else if (el._tabla) bl.push({ t: "tabla", titulo: c.t, cols: el._tabla.cols, filas: el._tabla.filas, fuente: fte });
+    }
+    bl.push({ t: "nota", texto: "Los mapas interactivos y el detalle de cada indicador están disponibles en la versión web del observatorio. Informe generado el " + window.EXP.hoyTxt() + "." });
+    await window.EXP.pdf({ titulo: sec.t + " - " + nom, sub: "Informe temático · " + nom, bloques: bl, nombre: "tulua_informe_" + window.EXP.slug(sec.t + "_" + nom) });
+  } catch (err) {
+    console.error(err); window.EXP && window.EXP.aviso("No se pudo generar el informe PDF.");
+  } finally { btn.disabled = false; btn.textContent = txt; }
 }
 
 function indPrincipal(c) { return c.ind || (c.inds && c.inds[0]) || (c.valores && c.valores[0]) || null; }
@@ -376,6 +403,7 @@ async function pintar(card, tc) {
     const fn = { serie, indice, multiserie, apiladas, piramide, dona, comparadas, ranking, comunas, comunas100: comunas, territorios, cultivos, mapa }[c.tipo];
     const info = await fn(c, box, tc, card);
     $(".cmp-fte", card).textContent = info ? `Fuente: ${info.fuente}${info.periodo ? " · " + info.periodo : ""}` : "";
+    if (info && window.EXP) window.EXP.menu(card, { titulo: c.t, sub: c.sub, terr: nombreT(tc), fuente: $(".cmp-fte", card).textContent.replace(/^Fuente: /, "") });
     requestAnimationFrame(() => requestAnimationFrame(() => {
       const cv = $("canvas", box), ch = cv && window.Chart && window.Chart.getChart(cv);
       if (ch) { ch.resize(); ch.update("none"); }
