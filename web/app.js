@@ -4,6 +4,8 @@
 "use strict";
 
 const DATA = "data/";
+const OBS = window.OBS || { nombre: "Tuluá", cod: "76834", subtitulo: "Observatorio territorial" };
+const FOCO = "MUN:" + OBS.cod, NOM = OBS.nombre;   // municipio de este observatorio
 const S = {
   cat: null, ind: {}, terr: {}, hijos: {}, per: {}, files: {}, geo: {},
   vista: "ficha", t: null, i: null,
@@ -85,6 +87,7 @@ const perTxt = (pc) => (S.per[pc] ? S.per[pc].e : pc);
 async function init() {
   const cat = await getJSON("catalogo.json");
   S.cat = cat;
+  cat.foco = FOCO;
   cat.indicadores.forEach((i) => (S.ind[i.c] = i));
   cat.territorios.forEach((t) => {
     S.terr[t.c] = t;
@@ -94,15 +97,24 @@ async function init() {
   S.temas = Object.fromEntries(cat.temas.map((t) => [t.id, t]));
   S.t = cat.foco;
 
-  // selector de territorio
+  // marca (desde config.js)
+  $("#brandB").innerHTML = `${esc(NOM)} <i>en cifras</i>`;
+  $("#brandS").textContent = OBS.subtitulo || "Observatorio territorial";
+  const hc = $("#v-comparar h1"); if (hc) hc.textContent = NOM + " frente a su entorno";
+
+  // selector de barrios: «Todo el municipio» + barrios agrupados por comuna
   const sel = $("#selTerr");
-  const grupo = (label, arr) => `<optgroup label="${esc(label)}">${arr.map((t) => `<option value="${t.c}">${esc(t.n)}</option>`).join("")}</optgroup>`;
   const tl = cat.territorios;
-  sel.innerHTML =
-    grupo("Departamento", tl.filter((t) => t.nv === "DEP")) +
-    grupo("Municipios del Valle", tl.filter((t) => t.nv === "MUN").sort((a, b) => a.n.localeCompare(b.n, "es"))) +
-    grupo("Tuluá · zonas", tl.filter((t) => t.nv === "CLA")) +
-    grupo("Tuluá · comunas", tl.filter((t) => t.nv === "COM"));
+  const barrios = tl.filter((t) => t.nv === "BAR" && t.c.startsWith("BAR:" + OBS.cod + "-"));
+  if (barrios.length) {
+    const porComuna = {};
+    barrios.forEach((b) => (porComuna[b.p] ||= []).push(b));
+    const coms = Object.keys(porComuna).sort((x, y) => (S.terr[x]?.n || x).localeCompare(S.terr[y]?.n || y, "es", { numeric: true }));
+    sel.innerHTML = `<option value="${FOCO}">Todo ${esc(NOM)}</option>` + coms.map((c) =>
+      `<optgroup label="${esc(S.terr[c]?.n || c)}">${porComuna[c].sort((x, y) => x.n.localeCompare(y.n, "es")).map((b) => `<option value="${b.c}">${esc(b.n)}</option>`).join("")}</optgroup>`).join("");
+  } else {
+    $(".terrpick").hidden = true;   // municipios sin barrios: no hay nada que elegir
+  }
   sel.value = S.t;
   sel.addEventListener("change", () => irTerritorio(sel.value));
 
@@ -115,12 +127,19 @@ async function init() {
   window.addEventListener("hashchange", leerHash);
 }
 
+function sincSelect(tc) {
+  const sel = $("#selTerr");
+  if ([...sel.options].some((o) => o.value === tc && o.id !== "optActual")) { sel.value = tc; return; }
+  let o = $("#optActual");
+  if (!o) { o = document.createElement("option"); o.id = "optActual"; o.hidden = true; sel.prepend(o); }
+  o.value = tc; o.textContent = (S.terr[tc]?.n || tc).replace(NOM + " · ", ""); sel.value = tc;
+}
 function leerHash() {
   const h = new URLSearchParams(location.hash.slice(1));
   const v = h.get("v") || S.vista;
   if (h.get("t") && S.terr[h.get("t")]) S.t = h.get("t");
   if (h.get("i") && S.ind[h.get("i")]) S.i = h.get("i");
-  $("#selTerr").value = S.t;
+  sincSelect(S.t);
   mostrar(v, false);
 }
 function escribirHash() {
@@ -145,7 +164,7 @@ function mostrar(v, push = true) {
 function irTerritorio(tc, vista) {
   S.t = tc;
   if (window.olvidarTema) window.olvidarTema();
-  if ([...$("#selTerr").options].some((o) => o.value === tc)) $("#selTerr").value = tc;
+  sincSelect(tc);
   mostrar(vista || S.vista);
 }
 function irIndicador(ic) { S.i = ic; mostrar("explorar"); }
@@ -161,12 +180,13 @@ function referencias(tc) {
   if (t.nv === "PAIS") return [];
   if (t.nv === "DEP") return ["PAIS:CO"];
   if (t.nv === "MUN") return ["DEP:76", "PAIS:CO"];
-  return ["MUN:76834", "DEP:76"];
+  return [FOCO, "DEP:76"];
 }
-const corto = (tc) => ({ "PAIS:CO": "Colombia", "DEP:76": "Valle", "MUN:76834": "Tuluá" }[tc] || S.terr[tc]?.n || tc);
+const corto = (tc) => ({ "PAIS:CO": "Colombia", "DEP:76": "Valle", [FOCO]: NOM }[tc] || S.terr[tc]?.n || tc);
 
 /* ================================================================ FICHA */
 const GRUPOS_FICHA = [
+  ["Anuario estadístico municipal", ["AN_POB_BAR", "AN_PREDIOS", "AN_AREA", "AN_AREACONS"]],
   ["Población y territorio", ["TD010010009", "TD010010010", "CNPV_POB", "CNPV_DENS", "CNPV_P60"]],
   ["Bienestar y pobreza", ["TD140030015", "TD140060001", "CNPV_EST12", "TD050010007", "TD050020003"]],
   ["Educación", ["TD040010012", "TD040040001", "CNPV_EDSUP"]],
@@ -271,17 +291,19 @@ document.addEventListener("click", (e) => { const b = e.target.closest("#btnInfo
 async function renderFicha() {
   const tc = S.t, t = S.terr[tc];
   const anc = ancestros(tc);
-  $("#fCrumbs").innerHTML = anc.map((a) => `<button data-t="${a}">${esc(S.terr[a].n)}</button><span>›</span>`).join("") + `<span>${esc(S.terr[tc].n.replace("Tuluá · ", ""))}</span>`;
+  $("#fCrumbs").innerHTML = anc.filter((a) => !["PAIS", "DEP"].includes(S.terr[a].nv)).map((a) => `<button data-t="${a}">${esc(S.terr[a].n)}</button><span>›</span>`).join("") + `<span>${esc(S.terr[tc].n.replace("Tuluá · ", ""))}</span>`;
   $$("#fCrumbs button").forEach((b) => b.addEventListener("click", () => irTerritorio(b.dataset.t)));
   $("#fName").textContent = t.n.replace("Tuluá · ", "");
   const nivelN = (S.cat.niveles.find((n) => n.c === t.nv) || {}).n;
   const codigo = tc.split(":")[1];
   $("#fSub").innerHTML = `${esc(nivelN)} · código <span class="mono">${esc(codigo)}</span>${t.a ? ` · ${nf(1)(t.a)} km²` : ""}` +
-    (t.foco ? " · «Corazón del Valle», en la subregión centro del Valle del Cauca, sobre el río Tuluá" : "");
+    (tc === FOCO && OBS.descripcion ? " · " + OBS.descripcion : "");
 
   // números principales
   const hero = t.nv === "MUN" || t.nv === "DEP"
-    ? [["TD010010009", "Población " + HOY + " (proyección DANE)"], ["TD010010010", "Habitantes por km²"], ["TD140030015", "Pobreza multidimensional (IPM)"], ["TD080010008", "Desempeño municipal (MDM)"]]
+    ? [["TD010010009", "Población (proyección DANE)"], ["TD010010010", "Habitantes por km²"], ["TD140030015", "Pobreza multidimensional (IPM)"], ["TD080010008", "Desempeño municipal (MDM)"]]
+    : t.nv === "BAR"
+    ? [["AN_POB_BAR", "Población estimada"], ["AN_PREDIOS", "Predios urbanos"], ["AN_AREACONS", "Área construida (m²)"], ["ACC_TOTAL", "Accidentes de tránsito"]]
     : [["CNPV_POB", "Personas censadas (2018)"], ["CNPV_DENS", "Habitantes por km²"], ["CNPV_EST12", "Viviendas en estratos 1 y 2"], ["CNPV_INT", "Viviendas con internet"]];
   const heroHtml = [];
   for (const [ic, lab] of hero) {
@@ -289,7 +311,7 @@ async function renderFicha() {
     if (!u) continue;
     heroHtml.push(`<div><b class="num">${esc(fmt(u[1], ic, true))}</b><small>${esc(lab)} · ${esc(perTxt(u[0]))}</small></div>`);
   }
-  $("#fHero").innerHTML = heroHtml.join("");
+  $("#fHero").innerHTML = heroHtml.join("") || `<p class="note">Este territorio no tiene indicadores publicados todavía.</p>`;
   renderDash(tc).catch((e) => console.warn("Cuadro de mando:", e));
 
   // grupos de indicadores con referencia
@@ -372,7 +394,7 @@ async function renderEdades(tc) {
   }
   const tot = vals.reduce((a, b) => a + b[1], 0);
   if (!tot) { box.innerHTML = `<p class="note">Sin datos censales para este territorio.</p>`; return; }
-  const refTc = S.terr[tc].nv === "MUN" && tc !== "MUN:76834" ? "MUN:76834" : S.terr[tc].nv === "MUN" ? "DEP:76" : "MUN:76834";
+  const refTc = S.terr[tc].nv === "MUN" && tc !== FOCO ? FOCO : S.terr[tc].nv === "MUN" ? "DEP:76" : FOCO;
   const refVals = [];
   for (const g of grupos) refVals.push((valorEn(await serie("CNPV_POB", refTc, "EDAD:" + g.c), "C2018")) || 0);
   const refTot = refVals.reduce((a, b) => a + b, 0) || 1;
@@ -394,7 +416,7 @@ async function renderEdades(tc) {
 async function renderHijos(tc) {
   const panel = $("#fChildrenPanel");
   let hijos = (S.hijos[tc] || []).filter((c) => ["COM", "CLA", "MUN"].includes(S.terr[c].nv));
-  if (tc === "MUN:76834") hijos = (S.hijos["CLA:768341"] || []).length ? S.cat.territorios.filter((t) => t.nv === "COM").map((t) => t.c) : hijos;
+  if (tc === FOCO) hijos = (S.hijos["CLA:" + OBS.cod + "1"] || []).length ? S.cat.territorios.filter((t) => t.nv === "COM").map((t) => t.c) : hijos;
   if (!hijos.length) { panel.hidden = true; return; }
   panel.hidden = false;
   const esMun = S.terr[hijos[0]].nv === "MUN";
@@ -407,7 +429,7 @@ async function renderHijos(tc) {
   $("#fChildren").innerHTML = `<div style="max-height:360px;overflow:auto">` + filas.map(([h, v]) =>
     `<div style="display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:4px 0;cursor:pointer" data-t="${h}">
       <span>${esc(S.terr[h].n)}</span><span class="num">${fmt(v, ic)}</span>
-      <span style="grid-column:1/-1;height:4px;border-radius:2px;background:var(--surface-2)"><span style="display:block;height:4px;border-radius:2px;width:${((v || 0) / max) * 100}%;background:${h === "MUN:76834" ? "var(--accent)" : "var(--ink-2)"}"></span></span>
+      <span style="grid-column:1/-1;height:4px;border-radius:2px;background:var(--surface-2)"><span style="display:block;height:4px;border-radius:2px;width:${((v || 0) / max) * 100}%;background:${h === FOCO ? "var(--accent)" : "var(--ink-2)"}"></span></span>
     </div>`).join("") + `</div>`;
   $$("#fChildren [data-t]").forEach((e) => e.addEventListener("click", () => irTerritorio(e.dataset.t)));
 }
@@ -416,7 +438,7 @@ async function renderHijos(tc) {
 let mini = null;
 async function miniMapa(tc) {
   const t = S.terr[tc];
-  const capa = ["COM", "CLA"].includes(t.nv) ? "geo_comunas.json" : "geo_municipios.json";
+  const capa = ["COM", "CLA", "BAR"].includes(t.nv) ? "geo_comunas.json" : "geo_municipios.json";
   const [gm, gc] = await Promise.all([getJSON("geo_municipios.json"), getJSON(capa)]);
   if (!window.L) { $("#miniMap").innerHTML = `<p class="note">Mapa no disponible sin conexión.</p>`; return; }
   if (!mini) {
@@ -426,13 +448,20 @@ async function miniMapa(tc) {
   const ink = css("--ink-2"), acc = css("--accent"), bg = css("--surface-2");
   const base = L.geoJSON(gm, {
     filter: (f) => S.terr[f.properties.c]?.nv === "MUN",
-    style: (f) => ({ color: css("--map-stroke"), weight: 1, fillColor: f.properties.c === tc || (["COM", "CLA"].includes(t.nv) && f.properties.c === "MUN:76834") ? acc : bg, fillOpacity: 1 }),
+    style: (f) => ({ color: css("--map-stroke"), weight: 1, fillColor: f.properties.c === tc || (["COM", "CLA"].includes(t.nv) && f.properties.c === FOCO) ? acc : bg, fillOpacity: 1 }),
   }).addTo(mini);
   let foco = base;
-  if (["COM", "CLA"].includes(t.nv)) {
-    foco = L.geoJSON(gc, { style: (f) => ({ color: css("--surface"), weight: 1, fillColor: t.nv === "CLA" || f.properties.c === tc ? acc : ink, fillOpacity: f.properties.c === tc || t.nv === "CLA" ? 1 : 0.35 }) }).addTo(mini);
+  const resalta = t.nv === "BAR" ? t.p : tc;   // de un barrio se resalta su comuna
+  if (["COM", "CLA", "BAR"].includes(t.nv)) {
+    foco = L.geoJSON(gc, { style: (f) => ({ color: css("--surface"), weight: 1, fillColor: t.nv === "CLA" || f.properties.c === resalta ? acc : ink, fillOpacity: f.properties.c === resalta || t.nv === "CLA" ? 1 : 0.35 }) }).addTo(mini);
     mini.fitBounds(foco.getBounds(), { padding: [8, 8] });
-    $("#fGeoNote").textContent = t.nv === "CLA" ? "Área urbana de Tuluá dividida en comunas." : "Comuna resaltada dentro del casco urbano de Tuluá.";
+    if (t.nv === "BAR") {
+      const gb = await getJSON("geo_barrios.json");
+      const pt = gb.features.find((f) => f.properties.c === tc);
+      const nc = S.terr[t.p]?.n || "su comuna";
+      if (pt) L.circleMarker([pt.geometry.coordinates[1], pt.geometry.coordinates[0]], { radius: 7, color: css("--surface"), weight: 2, fillColor: css("--bad"), fillOpacity: 1 }).addTo(mini);
+      $("#fGeoNote").textContent = pt ? `Punto de referencia del barrio dentro de la ${nc.toLowerCase()}.` : `${nc} resaltada: este barrio aún no tiene punto de referencia publicado.`;
+    } else $("#fGeoNote").textContent = t.nv === "CLA" ? "Área urbana de Tuluá dividida en comunas." : "Comuna resaltada dentro del casco urbano de Tuluá.";
   } else {
     mini.fitBounds(base.getBounds(), { padding: [4, 4] });
     $("#fGeoNote").textContent = t.nv === "DEP" ? "Los 42 municipios del Valle del Cauca." : `${t.n} resaltado entre los 42 municipios del Valle del Cauca.`;
@@ -581,7 +610,7 @@ async function dibujarMapa(reencuadrar = false) {
   capaDatos.addTo(mapa);
   if (M.nivel !== "MUN") {
     const [gm, gc] = await Promise.all([getJSON("geo_municipios.json"), getJSON("geo_comunas.json")]);
-    const ctx = { type: "FeatureCollection", features: gm.features.filter((f) => f.properties.c === "MUN:76834").concat(["SECU", "MZN", "BAR"].includes(M.nivel) ? gc.features : []) };
+    const ctx = { type: "FeatureCollection", features: gm.features.filter((f) => f.properties.c === FOCO).concat(["SECU", "MZN", "BAR"].includes(M.nivel) ? gc.features : []) };
     capaContexto = L.geoJSON(ctx, { style: { color: css("--context"), weight: 1.4, fill: false, opacity: 0.7, dashArray: "4 3" }, interactive: false }).addTo(mapa);
   } else capaContexto = null;
   if (reencuadrar) {
@@ -601,7 +630,7 @@ async function dibujarMapa(reencuadrar = false) {
   // tabla
   const filas = feats.map((f) => [f.properties.c, val[f.properties.c]]).sort((a, b) => (b[1] ?? -Infinity) - (a[1] ?? -Infinity));
   $("#mTable").innerHTML = `<thead><tr><th>Territorio</th><th>Código</th><th>Valor</th><th>Rango</th></tr></thead><tbody>` +
-    filas.map(([c, v], k) => `<tr class="${c === "MUN:76834" ? "foco" : ""}"><td>${esc(S.terr[c].n)}</td><td class="mono">${esc(c.split(":")[1])}</td><td class="num">${esc(fmt(v, ic))}</td><td>${typeof v === "number" ? `<span class="sw" style="display:inline-block;width:14px;height:10px;border-radius:2px;background:${cols[clase(v, br)]}"></span> ${clase(v, br) + 1}` : "—"}</td></tr>`).join("") + `</tbody>`;
+    filas.map(([c, v], k) => `<tr class="${c === FOCO ? "foco" : ""}"><td>${esc(S.terr[c].n)}</td><td class="mono">${esc(c.split(":")[1])}</td><td class="num">${esc(fmt(v, ic))}</td><td>${typeof v === "number" ? `<span class="sw" style="display:inline-block;width:14px;height:10px;border-radius:2px;background:${cols[clase(v, br)]}"></span> ${clase(v, br) + 1}` : "—"}</td></tr>`).join("") + `</tbody>`;
   $("#mSel").innerHTML = `<span class="note">Pasa el cursor por el mapa para ver cada valor; haz clic en ${M.nivel === "MUN" ? "un municipio" : "un territorio"} para ver su posición.</span>`;
 }
 
@@ -669,16 +698,16 @@ async function renderIndicador(ic) {
     ${ind.fx ? `<p class="note">Fórmula: ${esc(ind.fx)}</p>` : ""}${ind.nota ? `<p class="note">${esc(ind.nota)}</p>` : ""}</div>
     <div class="toolbar" style="margin:0">${puedeMapa ? `<button class="btn pri" id="iMapa">Ver en el mapa</button>` : ""}</div></div>
     <div class="cards">
-      <div class="panel card" id="cSerie"><h3>Evolución</h3><p class="note">Tuluá frente al Valle, Colombia y los municipios vecinos</p><div class="chart"></div></div>
+      <div class="panel card" id="cSerie"><h3>Evolución</h3><p class="note">${NOM} frente al Valle, Colombia y los municipios vecinos</p><div class="chart"></div></div>
       <div class="panel card" id="cRank"><h3>Ranking municipal</h3><div class="chart"></div></div>
-      <div class="panel card" id="cSub" hidden><h3>Dentro de Tuluá</h3><div class="tbl-wrap"></div></div>
+      <div class="panel card" id="cSub" hidden><h3>Dentro de ${NOM}</h3><div class="tbl-wrap"></div></div>
     </div>`;
   if (puedeMapa) $("#iMapa").addEventListener("click", () => { S.mapa.pendiente = ic; mostrar("mapa"); });
   const d = await datosInd(ic);
 
   // ---- serie temporal
   const vecinos = (S.cat.grupos.VECINOS?.m || []);
-  const lineas = [["MUN:76834", "Tuluá"], ["DEP:76", "Valle del Cauca"], ["PAIS:CO", "Colombia"]].concat(vecinos.map((v) => [v, S.terr[v].n]))
+  const lineas = [[FOCO, NOM], ["DEP:76", "Valle del Cauca"], ["PAIS:CO", "Colombia"]].concat(vecinos.map((v) => [v, S.terr[v].n]))
     .filter(([c]) => (d[c] || []).filter((r) => typeof r[1] === "number").length);
   const cSerie = $("#cSerie .chart");
   const pers = new Set();
@@ -693,7 +722,7 @@ async function renderIndicador(ic) {
     ley.addEventListener("change", (e) => { const c = e.target.dataset.c; e.target.checked ? activos.add(c) : activos.delete(c); dibuja(); });
     dibuja();
   } else {
-    const u = ultimo(d["MUN:76834"] || d[S.t] || [], true);
+    const u = ultimo(d[FOCO] || d[S.t] || [], true);
     cSerie.innerHTML = `<p class="note">Este indicador tiene un único periodo${u ? ` (${esc(perTxt(u[0]))})` : ""}: consulta el ranking o el mapa.</p>`;
   }
 
@@ -704,7 +733,7 @@ async function renderIndicador(ic) {
     const sel = document.createElement("select");
     sel.id = "rankPer"; sel.setAttribute("aria-label", "Periodo del ranking");
     sel.innerHTML = persMun.slice().sort((a, b) => xPer(b) - xPer(a)).map((p) => `<option value="${p}">${esc(perTxt(p))}</option>`).join("");
-    const pTulua = ultimo(d["MUN:76834"] || []);
+    const pTulua = ultimo(d[FOCO] || []);
     if (pTulua && persMun.includes(pTulua[0])) sel.value = pTulua[0];
     $("#cRank h3").after(sel);
     const dib = () => {
@@ -723,9 +752,9 @@ async function renderIndicador(ic) {
     cont.hidden = false;
     const per = (ind.niv.COM || ind.niv.CLA).slice(-1)[0];
     const filas = S.cat.territorios.filter((t) => subN.includes(t.nv)).map((t) => [t.c, valorEn(d[t.c] || [], per)]);
-    const ref = valorEn(d["MUN:76834"] || [], per);
+    const ref = valorEn(d[FOCO] || [], per);
     const max = Math.max(...filas.map((f) => Math.abs(f[1] || 0)), Math.abs(ref || 0));
-    $(".tbl-wrap", cont).innerHTML = `<p class="note">${esc(perTxt(per))} · Tuluá: <b>${esc(fmt(ref, ic))}</b></p><table><thead><tr><th>Zona / comuna</th><th>Valor</th><th style="width:40%"></th></tr></thead><tbody>` +
+    $(".tbl-wrap", cont).innerHTML = `<p class="note">${esc(perTxt(per))} · ${esc(NOM)}: <b>${esc(fmt(ref, ic))}</b></p><table><thead><tr><th>Zona / comuna</th><th>Valor</th><th style="width:40%"></th></tr></thead><tbody>` +
       filas.map(([c, v]) => `<tr><td><button class="btn" style="padding:2px 8px" data-t="${c}">${esc(S.terr[c].n.replace("Tuluá · ", ""))}</button></td><td class="num">${esc(fmt(v, ic))}</td>
       <td><div style="height:8px;border-radius:0 4px 4px 0;background:var(--accent);width:${max ? (Math.abs(v || 0) / max) * 100 : 0}%"></div></td></tr>`).join("") + `</tbody></table>`;
     $$("[data-t]", cont).forEach((b) => b.addEventListener("click", () => irTerritorio(b.dataset.t, "ficha")));
@@ -763,11 +792,11 @@ function graficoLineas(el, series, ic) {
   series.slice().reverse().forEach((s) => {
     const pts = s.pts.slice().sort((a, b) => a[0] - b[0]);
     const d = pts.map((p, k) => (k ? "L" : "M") + sx(p[0]).toFixed(1) + " " + sy(p[1]).toFixed(1)).join("");
-    const w = s.c === "MUN:76834" ? 3 : 2;
+    const w = s.c === FOCO ? 3 : 2;
     svg += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"/>`;
-    if (pts.length < 25) pts.forEach((p) => (svg += `<circle cx="${sx(p[0])}" cy="${sy(p[1])}" r="${s.c === "MUN:76834" ? 3.5 : 2.5}" fill="${s.color}" stroke="var(--surface)" stroke-width="1.5"/>`));
+    if (pts.length < 25) pts.forEach((p) => (svg += `<circle cx="${sx(p[0])}" cy="${sy(p[1])}" r="${s.c === FOCO ? 3.5 : 2.5}" fill="${s.color}" stroke="var(--surface)" stroke-width="1.5"/>`));
     const u = pts[pts.length - 1];
-    if (s.c === "MUN:76834") svg += `<circle cx="${sx(u[0])}" cy="${sy(u[1])}" r="5" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`;
+    if (s.c === FOCO) svg += `<circle cx="${sx(u[0])}" cy="${sy(u[1])}" r="5" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`;
   });
   svg += `<line id="xh" class="axis" y1="${m.t}" y2="${H - m.b}" x1="-10" x2="-10" stroke-dasharray="3 3"/><rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent" id="hit"/></svg>`;
   el.innerHTML = svg;
@@ -795,10 +824,10 @@ function graficoRanking(el, filas, ic, valDep) {
   const vals = filas.map((f) => f[1]).concat(typeof valDep === "number" ? [valDep] : []);
   const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
   const sx = (v) => m.l + ((v - lo) / ((hi - lo) || 1)) * (W - m.l - m.r);
-  const pos = filas.findIndex((f) => f[0] === "MUN:76834") + 1;
+  const pos = filas.findIndex((f) => f[0] === FOCO) + 1;
   let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Ranking de municipios">`;
   filas.forEach(([c, v], k) => {
-    const y = m.t + k * rowH, foco = c === "MUN:76834";
+    const y = m.t + k * rowH, foco = c === FOCO;
     const x = Math.min(sx(0), sx(v)), w = Math.max(1, Math.abs(sx(v) - sx(0)));
     svg += `<g data-t="${c}" style="cursor:pointer"><rect x="0" y="${y}" width="${W}" height="${rowH}" fill="transparent"/>
       <text x="${m.l - 8}" y="${y + 13}" text-anchor="end" class="${foco ? "lbl-strong" : "lbl"}">${k + 1}. ${esc(S.terr[c].n)}</text>
@@ -808,7 +837,7 @@ function graficoRanking(el, filas, ic, valDep) {
   if (typeof valDep === "number") svg += `<line x1="${sx(valDep)}" x2="${sx(valDep)}" y1="${m.t}" y2="${H - m.b + 4}" stroke="var(--ink)" stroke-dasharray="3 3"/><text x="${sx(valDep)}" y="${H - 4}" text-anchor="middle">Valle: ${esc(fmt(valDep, ic))}</text>`;
   svg += `</svg>`;
   const ind = S.ind[ic];
-  el.innerHTML = `<p class="note">${pos ? `Tuluá ocupa el puesto <b>${pos}</b> de ${filas.length}` : "Tuluá sin dato en este periodo"}${ind.p ? (ind.p > 0 ? " · a este indicador le conviene subir" : " · a este indicador le conviene bajar") : ""}.</p><div style="max-height:520px;overflow:auto">${svg}</div>`;
+  el.innerHTML = `<p class="note">${pos ? `${esc(NOM)} ocupa el puesto <b>${pos}</b> de ${filas.length}` : `${esc(NOM)} sin dato en este periodo`}${ind.p ? (ind.p > 0 ? " · a este indicador le conviene subir" : " · a este indicador le conviene bajar") : ""}.</p><div style="max-height:520px;overflow:auto">${svg}</div>`;
   $$("g[data-t]", el).forEach((g) => g.addEventListener("click", () => irTerritorio(g.dataset.t, "ficha")));
 }
 
@@ -825,15 +854,15 @@ async function renderComparar() {
     sel.addEventListener("change", renderComparar);
   }
   let miembros = S.cat.grupos[sel.value].m.slice();
-  if (!miembros.includes("MUN:76834")) miembros.unshift("MUN:76834");
-  miembros = ["MUN:76834"].concat(miembros.filter((m) => m !== "MUN:76834"));
+  if (!miembros.includes(FOCO)) miembros.unshift(FOCO);
+  miembros = [FOCO].concat(miembros.filter((m) => m !== FOCO));
   const cols = miembros.concat(["DEP:76"]);
   let html = `<thead><tr><th>Indicador</th><th>Año</th>${cols.map((c) => `<th><button class="btn" style="padding:2px 6px;font-size:11px" data-t="${c}">${esc(corto(c))}</button></th>`).join("")}</tr></thead><tbody>`;
   for (const ic of FILAS_COMPARA) {
     const ind = S.ind[ic];
     if (!ind) continue;
     const d = await datosInd(ic);
-    const u = ultimo(d["MUN:76834"] || []);
+    const u = ultimo(d[FOCO] || []);
     if (!u) continue;
     const vals = cols.map((c) => valorEn(d[c] || [], u[0]));
     const mun = vals.slice(0, miembros.length).filter((v) => typeof v === "number");
@@ -856,7 +885,7 @@ function renderMetodo() {
   c.indicadores.forEach((i) => (porFuente[i.f] = (porFuente[i.f] || 0) + 1));
   const top = Object.entries(porFuente).sort((a, b) => b[1] - a[1]);
   $("#v-metodo").innerHTML = `
-  <div class="eyebrow">Datos y método</div><h1 style="font-size:clamp(30px,4vw,48px);font-weight:900">Cómo está construido Tuluá en Cifras</h1>
+  <div class="eyebrow">Datos y método</div><h1 style="font-size:clamp(30px,4vw,48px);font-weight:900">Cómo está construido ${esc(NOM)} en Cifras</h1>
   <p>Todo el visualizador sale de una base de datos <b>PostgreSQL + PostGIS</b> (software libre) con un modelo en estrella: cada dato es la combinación de un <b>indicador</b>, un <b>territorio</b>, un <b>periodo</b> y una <b>desagregación</b>. Así, un mismo indicador puede consultarse para Colombia, el Valle, los 42 municipios, las comunas de Tuluá o sus manzanas sin cambiar la estructura.</p>
   <div class="stat-strip">
     <div><b class="num">${nf(0)(nDatos)}</b><span>indicadores</span></div>
@@ -900,7 +929,7 @@ function renderMetodo() {
 }
 
 /* ---------------------------------------------------------------- API para compendio.js */
-window.TC = { S, fmt, perTxt, nombreInd, getJSON, esc, xPer, HOY, irIndicador, irTerritorio, mostrar, unidadTxt };
+window.TC = { FOCO, NOM, S, fmt, perTxt, nombreInd, getJSON, esc, xPer, HOY, irIndicador, irTerritorio, mostrar, unidadTxt };
 
 /* ---------------------------------------------------------------- teclado */
 document.addEventListener("keydown", (e) => {

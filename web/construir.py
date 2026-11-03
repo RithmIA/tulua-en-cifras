@@ -17,7 +17,7 @@ doc = f"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Visualizador de datos territoriales de Tuluá (Valle del Cauca, Colombia)">
+<meta name="description" content="Observatorio de datos territoriales y socioeconómicos">
 {cabecera}
 </head>
 <body>

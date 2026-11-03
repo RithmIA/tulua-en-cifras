@@ -1,6 +1,9 @@
 /* Exportaciones de Tuluá en Cifras: imagen (PNG/JPEG), JSON, Excel y PDF.
    jsPDF, autoTable y SheetJS se cargan solo al pedir la primera descarga. */
 (function () {
+  const OBS = window.OBS || { nombre: "Tuluá", marca: "Tuluá en cifras", pdf: {} };
+  const PC = Object.assign({ marca: [0, 153, 0], acento: [0, 138, 0], tinta: [20, 30, 20], gris: [90, 100, 90], fondo: [244, 247, 244], linea: [217, 224, 217] }, OBS.pdf);
+  const MARCA = OBS.nombre + " en Cifras";
   const CDN = {
     jspdf: ["https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js", "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js", () => window.jspdf && window.jspdf.jsPDF],
     autotable: ["https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js", "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js", () => window.jspdf && window.jspdf.jsPDF.API.autoTable],
@@ -67,7 +70,7 @@
       g.font = `${px(11.5)}px ${fam}`;
       const y = pad + cab + cv.height + px(8);
       g.fillText(recorta(g, [meta.terr, meta.fuente && "Fuente: " + meta.fuente].filter(Boolean).join(" · "), ancho), pad, y);
-      g.fillText("Tuluá en Cifras · Alcaldía de Tuluá", pad, y + px(16));
+      g.fillText(MARCA + " · Alcaldía de " + OBS.nombre, pad, y + px(16));
     }
     return o;
   }
@@ -94,7 +97,7 @@
     const X = window.XLSX, t = card._tabla;
     const ws = X.utils.aoa_to_sheet([t.cols].concat(t.filas.map((f) => f.map(num))));
     ws["!cols"] = t.cols.map((c, i) => ({ wch: Math.min(42, Math.max(String(c).length, ...t.filas.slice(0, 80).map((f) => String(f[i] ?? "").length)) + 2) }));
-    const info = X.utils.aoa_to_sheet([["Título", meta.titulo], ["Subtítulo", meta.sub || ""], ["Territorio", meta.terr], ["Fuente", meta.fuente || ""], ["Generado", hoyTxt()], ["Publicación", "Tuluá en Cifras · Alcaldía de Tuluá"]]);
+    const info = X.utils.aoa_to_sheet([["Título", meta.titulo], ["Subtítulo", meta.sub || ""], ["Territorio", meta.terr], ["Fuente", meta.fuente || ""], ["Generado", hoyTxt()], ["Publicación", MARCA + " · Alcaldía de " + OBS.nombre]]);
     info["!cols"] = [{ wch: 14 }, { wch: 80 }];
     const wb = X.utils.book_new();
     X.utils.book_append_sheet(wb, ws, "Datos"); X.utils.book_append_sheet(wb, info, "Metadatos");
@@ -139,15 +142,15 @@
   async function pdf(o) {
     await lib("jspdf"); await lib("autotable");
     const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
-    const W = 210, M = 15, AN = W - 2 * M, LIM = 278, AZ = [51, 102, 204], OSC = [0, 72, 132], TXT = [27, 42, 65], GRIS = [100, 115, 139];
+    const W = 210, M = 15, AN = W - 2 * M, LIM = 278, AZ = PC.acento, OSC = PC.marca, TXT = PC.tinta, GRIS = PC.gris;
     const L = limpia;
     let y = 0;
     const salto = (h) => { if (y + h > LIM) { doc.addPage(); y = M; } };
     const texto = (t, tam, est, col) => { doc.setFont("helvetica", est); doc.setFontSize(tam); doc.setTextColor(...col); };
 
     doc.setFillColor(...OSC); doc.rect(0, 0, W, 22, "F");
-    texto("", 11, "bold", [255, 255, 255]); doc.text("Alcaldía de Tuluá", M, 9.5);
-    texto("", 9, "normal", [255, 255, 255]); doc.text(L("Tuluá en Cifras · Observatorio territorial"), M, 15.5);
+    texto("", 11, "bold", [255, 255, 255]); doc.text("Alcaldía de " + OBS.nombre, M, 9.5);
+    texto("", 9, "normal", [255, 255, 255]); doc.text(L(MARCA + " · " + (OBS.subtitulo || "Observatorio territorial")), M, 15.5);
     y = 35;
     texto("", 19, "bold", TXT);
     const tt = doc.splitTextToSize(L(o.titulo), AN); doc.text(tt, M, y); y += tt.length * 8;
@@ -159,7 +162,7 @@
         salto(16); texto("", 13, "bold", AZ); doc.text(L(b.texto), M, y + 5);
         doc.setDrawColor(...AZ); doc.setLineWidth(0.4); doc.line(M, y + 7.5, M + AN, y + 7.5); y += 13;
       } else if (b.t === "p" || b.t === "nota") {
-        texto("", b.t === "p" ? 9.5 : 8, b.t === "p" ? "normal" : "italic", b.t === "p" ? [70, 83, 107] : GRIS);
+        texto("", b.t === "p" ? 9.5 : 8, b.t === "p" ? "normal" : "italic", b.t === "p" ? PC.tinta : GRIS);
         const ln = doc.splitTextToSize(L(b.texto), AN), h = ln.length * (b.t === "p" ? 4.6 : 3.8);
         salto(h + 2); doc.text(ln, M, y + 4); y += h + 5;
       } else if (b.t === "cifras") {
@@ -167,7 +170,7 @@
         b.items.forEach((it, i) => {
           if (i % 3 === 0) salto(h + 4);
           const x = M + (i % 3) * (w + 4);
-          doc.setFillColor(244, 246, 251); doc.setDrawColor(217, 224, 238); doc.setLineWidth(0.2); doc.roundedRect(x, y, w, h, 1.5, 1.5, "FD");
+          doc.setFillColor(...PC.fondo); doc.setDrawColor(...PC.linea); doc.setLineWidth(0.2); doc.roundedRect(x, y, w, h, 1.5, 1.5, "FD");
           doc.setFillColor(...AZ); doc.rect(x, y, w, 1.2, "F");
           texto("", 8, "normal", GRIS); doc.text(doc.splitTextToSize(L(it.l), w - 6).slice(0, 2), x + 3, y + 6);
           texto("", 14, "bold", TXT); doc.text(L(it.v), x + 3, y + 16.5);
@@ -190,9 +193,9 @@
         doc.autoTable({
           startY: y, head: [b.cols.map(L)], body: b.filas.map((f) => f.map(L)), theme: "grid",
           margin: { left: M, right: M, bottom: 18 },
-          styles: { fontSize: 8, cellPadding: 1.7, textColor: TXT, lineColor: [217, 224, 238], lineWidth: 0.15 },
+          styles: { fontSize: 8, cellPadding: 1.7, textColor: TXT, lineColor: PC.linea, lineWidth: 0.15 },
           headStyles: { fillColor: AZ, textColor: 255, fontStyle: "bold" },
-          alternateRowStyles: { fillColor: [244, 246, 251] },
+          alternateRowStyles: { fillColor: PC.fondo },
           columnStyles: Object.fromEntries(b.cols.map((c, i) => [i, i ? { halign: "right" } : { cellWidth: "auto" }])),
         });
         y = doc.lastAutoTable.finalY + 4;
@@ -200,9 +203,9 @@
         y += 5;
       }
     }
-    const n = doc.getNumberOfPages(), pie = o.pie || "Tuluá en Cifras · " + location.host + location.pathname;
+    const n = doc.getNumberOfPages(), pie = o.pie || MARCA + " · " + location.host + location.pathname;
     for (let p = 1; p <= n; p++) {
-      doc.setPage(p); doc.setDrawColor(217, 224, 238); doc.setLineWidth(0.2); doc.line(M, 285, W - M, 285);
+      doc.setPage(p); doc.setDrawColor(...PC.linea); doc.setLineWidth(0.2); doc.line(M, 285, W - M, 285);
       texto("", 7.5, "normal", GRIS);
       doc.text(doc.splitTextToSize(L(pie), AN - 30).slice(0, 1), M, 289.5);
       doc.text(`Página ${p} de ${n}`, W - M, 289.5, { align: "right" });

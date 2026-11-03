@@ -7,6 +7,8 @@
    Cada tarjeta declara qué indicadores usa; 07_exportar_compendio.py lee este archivo
    y exporta sólo esos códigos. Tipos: serie, indice, multiserie, apiladas, piramide,
    dona, comparadas, ranking, comunas, comunas100, cultivos, mapa, cifras            */
+const OBS = window.OBS || { nombre: "Tuluá", cod: "76834" };
+const FOCO = "MUN:" + OBS.cod, NOM = OBS.nombre;   // municipio de este observatorio (config.js)
 const REF = ["DEP:76", "PAIS:CO"];
 const SECCIONES = [
   { id: "demografia", t: "Demografía", tab: "Demografía",
@@ -106,7 +108,7 @@ const SECCIONES = [
     cards: [
       { t: "Valor agregado por grandes actividades", sub: "Miles de millones de pesos corrientes", tipo: "apiladas",
         inds: ["TD120210005", "TD120210006", "TD120210007"], etiquetas: ["Primarias", "Secundarias", "Terciarias"] },
-      { t: "Peso de Tuluá en el valor agregado del Valle", sub: "% del departamento", tipo: "serie", ind: "TD120210004", refs: [] },
+      { t: `Peso de ${NOM} en el valor agregado del Valle`, sub: "% del departamento", tipo: "serie", ind: "TD120210004", refs: [] },
       { t: "Valor agregado per cápita", sub: "Pesos corrientes", tipo: "serie", ind: "TD120210002" },
       { t: "Valor agregado por habitante en los municipios vecinos", sub: "Pesos corrientes · último año", tipo: "ranking", ind: "TD120210002", grupo: "VECINOS" },
       { t: "Principales cultivos", sub: "Toneladas producidas · último año", tipo: "cultivos",
@@ -174,7 +176,7 @@ const SECCIONES = [
       { t: "Accidentes de tránsito registrados", sub: "Alcaldía de Tuluá · el año en curso es parcial", tipo: "serie", ind: "ACC_TOTAL", refs: [] },
       { t: "Accidentes de tránsito por comuna", sub: "Accidentes registrados por año (el año en curso es parcial)", tipo: "comunas", ind: "ACC_TOTAL", porAnio: true, w: 2 },
     ] },
-  { id: "comunas", t: "Tuluá por comunas", tab: "Comunas", soloFoco: true, nivelPref: "COM",
+  { id: "comunas", t: `${NOM} por comunas`, tab: "Comunas", soloFoco: true, nivelPref: "COM",
     intro: "Radiografía intraurbana con el Censo Nacional de Población y Vivienda 2018 agregado por comuna desde las manzanas.",
     cards: [
       { t: "Densidad de población por comuna", sub: "Habitantes por km² · Censo 2018", tipo: "comunas", ind: "CNPV_DENS" },
@@ -745,13 +747,13 @@ async function comunas(c, box, tc) {
     const q = ultimoComun(inds, [coms[0]]);
     if (!q) return null;
     per = TC().perTxt(q);
-    const refMun = inds.map((ic) => valor(ic, "MUN:76834", q));
+    const refMun = inds.map((ic) => valor(ic, FOCO, q));
     datasets = inds.map((ic, j) => ({ label: c.etiquetas ? c.etiquetas[j] : TC().nombreInd(ic), data: coms.map((k) => valor(ic, k, q)),
       backgroundColor: inds.length === 1 ? p[0] : p[j % p.length], borderColor: tok("--surface"), borderWidth: c.tipo === "comunas100" || c.apilado ? { top: 1 } : 0 }));
     cols = ["Comuna", ...datasets.map((d) => d.label)];
     filas = coms.map((k, i) => [S.terr[k].n, ...inds.map((ic, j) => TC().fmt(datasets[j].data[i], ic))]);
     if (refMun.every((v) => typeof v === "number") && c.tipo !== "comunas100" && !c.apilado && TC().S.ind[inds[0]].ut !== "absoluto") {
-      filas.push(["Tuluá (municipio)", ...inds.map((ic, j) => TC().fmt(refMun[j], ic))]);
+      filas.push([NOM + " (municipio)", ...inds.map((ic, j) => TC().fmt(refMun[j], ic))]);
       if (inds.length === 1) c._ref = refMun[0];
     }
   }
@@ -774,7 +776,7 @@ async function comunas(c, box, tc) {
           ticks: { callback: (v) => (c.porAnio ? nf(0, v) : corta(v, ic0)) } },
       },
     },
-    plugins: c._ref !== undefined ? [refLineaY(c._ref, "Tuluá", ic0)] : [],
+    plugins: c._ref !== undefined ? [refLineaY(c._ref, NOM, ic0)] : [],
   });
   registrar(ch, box.closest(".cmp-card"), { cols, filas });
   return { fuente: fuenteDe(ic0), periodo: per };
@@ -796,7 +798,7 @@ function refLineaY(v, txt, ic) {
 /* ---------- barras por barrio o corregimiento (los N mayores del último periodo) */
 async function territorios(c, box, tc) {
   const S = TC().S;
-  const lista = S.cat.territorios.filter((t) => t.nv === c.nivel && (!t.cod_mpio || t.cod_mpio === "76834")).map((t) => t.c);
+  const lista = S.cat.territorios.filter((t) => t.nv === c.nivel && (!t.cod_mpio || t.cod_mpio === OBS.cod)).map((t) => t.c);
   if (!lista.length) return null;
   // periodo más reciente con datos en al menos el 60 % de los territorios
   const pers = [...new Set(lista.flatMap((k) => serieDe(c.ind, k).filter((r) => !fut(r[0])).map((r) => r[0])))]
@@ -917,7 +919,7 @@ async function mapaTema(sec, box, tc, card) {
     const n = nivelesCon(ic);
     const ops = [];
     if (n.MUN >= 8) ops.push(["MUN", "Municipios del Valle"]);
-    if (n.COM >= 5) ops.push(["COM", "Comunas de Tuluá"]);
+    if (n.COM >= 5) ops.push(["COM", "Comunas de " + NOM]);
     if (!ops.some((o) => o[0] === nivel)) nivel = ops[0][0];
     selN.innerHTML = ops.map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
     selN.value = nivel;
